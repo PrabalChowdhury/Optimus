@@ -1,7 +1,6 @@
 import os
 import discord
 from discord.ext import commands, tasks
-from discord.voice_client import VoiceClient
 import youtube_dl
 my_secret = os.environ['TOKEN']
 from random import choice
