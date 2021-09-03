@@ -4,7 +4,7 @@ from discord.ext import commands, tasks
 import youtube_dl
 my_secret = os.environ['TOKEN']
 from random import choice
-
+from keep_alive import keep_alive
 youtube_dl.utils.bug_reports_message = lambda: ''
 
 ytdl_format_options = {
@@ -96,4 +96,5 @@ async def stop(ctx):
 async def change_status():
     await client.change_presence(activity=discord.Game(choice(status)))
 
+keep_alive()
 client.run(my_secret)
