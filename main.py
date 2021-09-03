@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 import youtube_dl
 import os
-
+my_secret = os.environ['TOKEN']
 client = commands.Bot(command_prefix="!")
 
 @client.command()
@@ -68,4 +68,4 @@ async def stop(ctx):
     voice.stop()
 
 
-client.run('')
+client.run(my_secret)
