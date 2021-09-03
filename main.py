@@ -1,71 +1,100 @@
-import discord
-from discord.ext import commands
-import youtube_dl
 import os
+import discord
+from discord.ext import commands, tasks
+from discord.voice_client import VoiceClient
+import youtube_dl
 my_secret = os.environ['TOKEN']
-client = commands.Bot(command_prefix="+")
+from random import choice
 
-@client.command()
-async def play(ctx, url : str):
-    song_there = os.path.isfile("song.mp3")
-    try:
-        if song_there:
-            os.remove("song.mp3")
-    except PermissionError:
-        await ctx.send("Wait for the current playing music to end or use the 'stop' command")
+youtube_dl.utils.bug_reports_message = lambda: ''
+
+ytdl_format_options = {
+    'format': 'bestaudio/best',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
+    'noplaylist': True,
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'logtostderr': False,
+    'quiet': True,
+    'no_warnings': True,
+    'default_search': 'auto',
+    'source_address': '0.0.0.0' 
+}
+
+ffmpeg_options = {
+    'options': '-vn'
+}
+
+ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
+
+class YTDLSource(discord.PCMVolumeTransformer):
+    def __init__(self, source, *, data, volume=0.5):
+        super().__init__(source, volume)
+
+        self.data = data
+
+        self.title = data.get('title')
+        self.url = data.get('url')
+
+    @classmethod
+    async def from_url(cls, url, *, loop=None, stream=False):
+        loop = loop or asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+
+        if 'entries' in data:
+            # take first item from a playlist
+            data = data['entries'][0]
+
+        filename = data['url'] if stream else ytdl.prepare_filename(data)
+        return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
+
+
+client = commands.Bot(command_prefix='+')
+
+status = ['Jamming out to music!', 'Eating!', 'Sleeping!']
+
+@client.event
+async def on_ready():
+    change_status.start()
+    print('Bot is online!')
+
+@client.event
+async def on_member_join(member):
+    channel = discord.utils.get(member.guild.channels, name='general')
+    await channel.send(f'Welcome {member.mention}!  Ready to jam out? See `?help` command for details!')
+
+@client.command(name='ping', help='This command returns the latency')
+async def ping(ctx):
+    await ctx.send(f'**Pong!** Latency: {round(client.latency * 1000)}ms')
+
+@client.command(name='play', help='This command plays music')
+async def play(ctx, url):
+    if not ctx.message.author.voice:
+        await ctx.send("You are not connected to a voice channel")
         return
 
-    voiceChannel = discord.utils.get(ctx.guild.voice_channels, name='General')
-    await voiceChannel.connect()
-    voice = discord.utils.get(client.voice_clients, guild=ctx.guild)
-
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-    }
-    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
-    for file in os.listdir("./"):
-        if file.endswith(".mp3"):
-            os.rename(file, "song.mp3")
-    voice.play(discord.FFmpegPCMAudio("song.mp3"))
-
-
-@client.command()
-async def leave(ctx):
-    voice = discord.utils.get(client.voice_clients, guild=ctx.guild)
-    if voice.is_connected():
-        await voice.disconnect()
     else:
-        await ctx.send("The bot is not connected to a voice channel.")
+        channel = ctx.message.author.voice.channel
 
+    await channel.connect()
 
-@client.command()
-async def pause(ctx):
-    voice = discord.utils.get(client.voice_clients, guild=ctx.guild)
-    if voice.is_playing():
-        voice.pause()
-    else:
-        await ctx.send("Currently no audio is playing.")
+    server = ctx.message.guild
+    voice_channel = server.voice_client
 
+    async with ctx.typing():
+        player = await YTDLSource.from_url(url, loop=client.loop)
+        voice_channel.play(player, after=lambda e: print('Player error: %s' % e) if e else None)
 
-@client.command()
-async def resume(ctx):
-    voice = discord.utils.get(client.voice_clients, guild=ctx.guild)
-    if voice.is_paused():
-        voice.resume()
-    else:
-        await ctx.send("The audio is not paused.")
+    await ctx.send('**Now playing:** {}'.format(player.title))
 
-
-@client.command()
+@client.command(name='stop', help='This command stops the music and makes the bot leave the voice channel')
 async def stop(ctx):
-    voice = discord.utils.get(client.voice_clients, guild=ctx.guild)
-    voice.stop()
+    voice_client = ctx.message.guild.voice_client
+    await voice_client.disconnect()
 
+@tasks.loop(seconds=20)
+async def change_status():
+    await client.change_presence(activity=discord.Game(choice(status)))
 
 client.run(my_secret)
