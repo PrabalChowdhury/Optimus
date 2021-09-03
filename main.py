@@ -42,7 +42,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
         data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
 
         if 'entries' in data:
-            # take first item from a playlist
             data = data['entries'][0]
 
         filename = data['url'] if stream else ytdl.prepare_filename(data)
@@ -51,7 +50,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
 client = commands.Bot(command_prefix='+')
 
-status = ['Jamming out to music!', 'Eating!', 'Sleeping!']
+status = ['Jamming out to music!']
 
 @client.event
 async def on_ready():
